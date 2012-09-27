@@ -1,0 +1,91 @@
+About the feature, I have discussed with some people from osgi community.
+
+-> (Tang) Q: 
+
+I have a question about about getting osgi service on-demand. My case
+is as following:
+
+I want to implement a activating mode on which while activating a osgi
+bundle using getService method on the bundle's activator, if the
+bundle's dependencies which provide services and also need to be
+started, do not exist on current felix cache, the mode will download the
+dependencies from remote/local OBR repositories or Maven repositories,
+then install and start the dependencies. Sometimes this is called
+activating-time resolving.
+
+  Then, a critical point implementing the above needs a way to intercept
+getService method ,and once finding current required service does not
+exist on the service registration, the mode will download the
+dependencies and install and start the dependencies.
+
+   So, I want to ask whether having a solution can implement the
+critical point or not?  Can service hooks implement it? 
+
+-> (David Bosschaert) A:
+
+Yes, something like this is done by Remote Services implementations too (like the CXF-DOSGi project [1]).
+When a client is looking for a service (e.g. by using a Service Tracker, Service Listener or whatever) and the service isn't available locally, the Remote Services implementation consults the Discovery system to see whether there might be a remote service available for this request. When it is, a local proxy to that service is registered on demand so the service appears locally whenever the first client requests it. It uses Service Registry Hooks to achieve this.
+
+In your case you could use the same mechanism to find, download, install and start the bundle that provides the service. It might take a few seconds for the service to appear but if you use standard OSGi service consumer APIs such as ServiceTracker, ServiceListener, DS, Blueprint, iPOJO etc that should be no problem as they can nicely react to services appearing asynchronously without the need to change the service consumer code.
+
+BTW this would have been an excellent question for the osgi-dev public mailing list: http://www.osgi.org/MailLists/HomePage
+
+[1] http://cxf.apache.org/distributed-osgi.html
+
+-> (Marcel Offermans)A:
+
+Exactly, somehow you need to intercept this method, and probably the best way to do that is to somehow add hooks to the BundleContext, which is the API through which a bundle communicates with the framework.
+
+Unfortunately, not as far as I know.
+
+The problem is that in general, the supplied Find and Event Hooks can only *filter* the existing collection of services available in the service registry. You can not, on the fly, add new services. The only way to do that is by using a Listener hook that can see if there are bundles listening for a certain type of service.
+
+However, this is not really "on demand" as often you have something like a service tracker that will immediately start listening for a service, and you might not immediately use it.
+
+What I have done for something similar is to provide a bundle with a proxy to its real bundle context and intercept the right calls there. To do that you need to slightly modify a bundle:
+
+1. Replace the existing BundleActivator with a new one that contains the proxy.
+2. Have this proxy instantiate the original BundleActivator.
+3. Intercept the getService (or maybe getServiceReference) and do your magic.
+4. Delegate all other calls to the original BundleActivator.
+
+-> (Tang)Comment:
+
+Marcel, previously, I also found the way based on ObjectWeb's Ondemand idea[1].
+
+[1]: http://membres-liglab.imag.fr/donsez/pub/publi/owc05-ondemand_osgi.pdf
+
+In addition,
+
+> What I have done for something similar
+If allowing, can I see your doing? Your doing is put on ACE? 
+
+-> (Marcel Offermans)A:
+
+Yes. It is a shame that these hooks can not be used to add services. I was a bit disappointed after they were introduced.
+
+Yes, the OnDemand part is what I meant. The rest of the presentation, about resolving all kinds of dependencies, is obsolete as you could now do this via the new OBR specification that allows you to model arbitrary dependencies. The biggest issue I have with that so far is that you need to convince everybody that publishes bundles to model this same metadata before you can consistently use it. Or, you need to add that metadata yourself.
+
+One example is in the Apache Felix Dependency Manager. It is actually not fully documented yet because of lack of time. The feature is an index that dramatically speeds up the service registry in OSGi. As you know, this is basically a list of services with properties, and a lookup usually triggers a linear search. We've had use cases where we had a framework that had 10000+ services, and there you notice, especially at startup, a considerable slowdown. So the dependency manager can use an "index" on the service registry to speed up any lookups (just like a database would use it).
+
+The code for this is mostly found in this package:
+
+http://svn.apache.org/repos/asf/felix/trunk/dependencymanager/core/src/main/java/org/apache/felix/dm/impl/index/
+
+With a bit of startup code in the static initializer of this class:
+
+http://svn.apache.org/repos/asf/felix/trunk/dependencymanager/core/src/main/java/org/apache/felix/dm/DependencyManager.java
+
+The other example is from the Amdatu project. Here we have a feature that allows us to create multi-tenant applications transparently. Multi-tenancy means that we can have multiple "instances" of a bundle run side-by-side in the same container, isolated from each other. To transparently implement such a feature, we intercept the BundleContext and create an instance per tenant. It is further documented (from a user point of view) here:
+
+http://amdatu.org/components/multitenancy.html
+
+Design documentation here:
+
+https://amdatu.atlassian.net/wiki/display/AMDATU/Amdatu+Tenant+Design
+
+The code can be found in this package:
+
+https://bitbucket.org/amdatu/amdatu-platform/src/56b61227ce57/amdatu-tenant/tenant-adapter/src/main/java/org/amdatu/tenant/adapter
+
+Both are completely different use cases than what you are looking for of course, but they do illustrate how you can use the interceptor pattern.

@@ -1,5 +1,25 @@
 About the feature, I have discussed with some people from osgi community.
 
+-> (Tang) Q:
+
+After seeing Robert Dunne's OSGi Dependencies: Heaven and Hell, I am specially interested in the following :
+
+    If you were using a resolver that wasnft aware of ACTIVE bundle dependencies then youfd have to manage all of this yourself. With Nimble you just ask for what you need and let the resolver take care of the rest. This speeds up the development life-cycle and keeps redundant clutter out of your scripts.
+
+Just as Richard said, using obr can resolve resolving-time dependencies. However, I think that if not scanning the bundle's source , it is difficult to resolve active-time dependencies (active bundle's dependencies automatically) .
+
+For example, if a bundle A used a service which was registered on bundle B using BundleContext.register method, then, when activating the bundle A, how can we know the fact that we must activate the bundle B too?
+
+-> (Robert Dunne)A:
+
+The assumption behind the whole approach is that bundles will provide metadata indicating their requirements and capabilities. Some extra information can be inferred from other artifacts in the bundle, such as a web.xml file or a declarative services component file.
+
+Even with code level dependencies, therefs no way to detect arbitrary dynamic classloading - metadata is essential.
+
+Writing a program that could determine all possible capabilities and requirements of a bundle would be a hard static analysis problem, and these tend to be equivalent to the Halting Problem, i.e. impossible.
+
+http://stackoverflow.com/questions/12488228/how-to-active-bundles-dependencies-automaticlly-when-activing-the-bundle
+
 -> (Tang) Q: 
 
 I have a question about about getting osgi service on-demand. My case
@@ -89,3 +109,5 @@ The code can be found in this package:
 https://bitbucket.org/amdatu/amdatu-platform/src/56b61227ce57/amdatu-tenant/tenant-adapter/src/main/java/org/amdatu/tenant/adapter
 
 Both are completely different use cases than what you are looking for of course, but they do illustrate how you can use the interceptor pattern.
+
+
